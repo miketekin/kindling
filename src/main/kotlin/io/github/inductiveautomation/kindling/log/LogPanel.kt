@@ -24,6 +24,8 @@ import io.github.inductiveautomation.kindling.utils.VerticalSplitPane
 import io.github.inductiveautomation.kindling.utils.attachPopupMenu
 import io.github.inductiveautomation.kindling.utils.configureCellRenderer
 import io.github.inductiveautomation.kindling.utils.debounce
+import io.github.inductiveautomation.kindling.utils.getAncestorOfClass
+import io.github.inductiveautomation.kindling.utils.jFrame
 import io.github.inductiveautomation.kindling.utils.maxSelectedIndex
 import io.github.inductiveautomation.kindling.utils.minSelectedIndex
 import io.github.inductiveautomation.kindling.utils.selectedRowIndices
@@ -34,6 +36,7 @@ import kotlinx.coroutines.launch
 import net.miginfocom.swing.MigLayout
 import org.jdesktop.swingx.JXSearchField
 import org.jdesktop.swingx.table.ColumnControlButton.COLUMN_CONTROL_MARKER
+import org.jfree.chart.ChartPanel
 import java.awt.BorderLayout
 import java.util.Vector
 import javax.swing.BorderFactory
@@ -303,6 +306,23 @@ sealed class LogPanel<T : LogEvent>(
             nextMarked.addActionListener {
                 getNextMarkedIndex(forward = true)?.let(::updateSelection)
             }
+
+            val clockDriftData = this@LogPanel.rawData.mapNotNull(LogEvent::toClockDriftData)
+            if (clockDriftData.isEmpty()) {
+                clockDrift.isEnabled = false
+                clockDrift.toolTipText = "No clock drift events found"
+            } else {
+                clockDrift.addActionListener {
+                    val source = this@LogPanel.name ?: this@LogPanel.getAncestorOfClass<ToolPanel>()?.name
+                    jFrame(
+                        title = listOfNotNull("Clock Drift", source).joinToString(" - "),
+                        width = 800,
+                        height = 600,
+                    ) {
+                        add(ChartPanel(clockDriftChart(clockDriftData)))
+                    }
+                }
+            }
         }
 
         ShowFullLoggerNames.addChangeListener {
@@ -383,6 +403,10 @@ sealed class LogPanel<T : LogEvent>(
             toolTipText = "Jump to next marked event"
         }
 
+        val clockDrift = JButton(FlatActionIcon("icons/bx-bar-chart-alt.svg")).apply {
+            toolTipText = "View clock drift chart"
+        }
+
         @Suppress("EnumValuesSoftDeprecate") // not a performance sensitive enum.values() call
         val markedBehavior = JComboBox(MarkedBehavior.values()).apply {
             selectedItem = MarkedBehavior.ShowAll
@@ -401,6 +425,11 @@ sealed class LogPanel<T : LogEvent>(
             add(highlightMarked)
         }
 
+        private val chartsPanel = JPanel(MigLayout("fill, ins 0 2 0 2")).apply {
+            border = BorderFactory.createTitledBorder("Charts")
+            add(clockDrift)
+        }
+
         private val searchPanel = JPanel(MigLayout("fill, ins 0 2 0 2")).apply {
             border = BorderFactory.createTitledBorder("Search")
             add(search, "grow")
@@ -414,6 +443,7 @@ sealed class LogPanel<T : LogEvent>(
 
         init {
             add(markedPanel, "cell 0 0, growy")
+            add(chartsPanel, "cell 0 0, growy, wmin 75")
             add(versionPanel, "cell 0 0, growy")
             add(searchPanel, "cell 0 0, grow, push")
             updateVersionVisibility()
