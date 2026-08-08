@@ -26,7 +26,7 @@ class SystemLogPanel(
     override val sidebar = FileFilterSidebar(
         listOf(
             LoggerNamePanel(rawData),
-            LevelPanel(rawData),
+            LevelPanel(rawData, stripe),
             MDCPanel(rawData),
             ThreadPanel(rawData),
             TimePanel(rawData),

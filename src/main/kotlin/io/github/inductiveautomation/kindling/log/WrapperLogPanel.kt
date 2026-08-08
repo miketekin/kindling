@@ -36,7 +36,7 @@ class WrapperLogPanel(
     override val sidebar = FileFilterSidebar(
         listOf(
             LoggerNamePanel(rawData),
-            LevelPanel(rawData),
+            LevelPanel(rawData, stripe),
             TimePanel(rawData),
         ),
         fileData = paths.zip(fileData).toMap(),

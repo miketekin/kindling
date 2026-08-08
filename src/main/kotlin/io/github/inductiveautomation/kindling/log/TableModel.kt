@@ -30,6 +30,7 @@ class LogsModel<T : LogEvent>(
     override fun setValueAt(aValue: Any?, rowIndex: Int, columnIndex: Int) {
         require(isCellEditable(rowIndex, columnIndex))
         data[rowIndex].marked = aValue as Boolean
+        fireTableCellUpdated(rowIndex, columnIndex)
     }
 
     /**
