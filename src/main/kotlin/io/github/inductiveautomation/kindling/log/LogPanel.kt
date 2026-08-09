@@ -59,6 +59,7 @@ sealed class LogPanel<T : LogEvent>(
      */
     rawData: List<T>,
     private val columnList: LogColumnList<T>,
+    wallClockTimestamps: Boolean,
 ) : ToolPanel("ins 0, fill, hidemode 3") {
     protected val rawData: MutableList<T> = rawData.sortedBy(LogEvent::timestamp).toMutableList()
 
@@ -75,7 +76,11 @@ sealed class LogPanel<T : LogEvent>(
         }
     }
 
-    protected val header = Header()
+    protected val metrics = MetricsStripeState(wallClockTimestamps) {
+        rawData.minOf(LogEvent::timestamp).toEpochMilli()..rawData.maxOf(LogEvent::timestamp).toEpochMilli()
+    }
+
+    protected val header = Header(metrics)
 
     private val footer = Footer(selectedData.size)
 
@@ -91,6 +96,8 @@ sealed class LogPanel<T : LogEvent>(
     private val tableScrollPane = FlatScrollPane(table)
 
     private val markerStripe = MarkerStripe(table, stripe)
+
+    private val metricsStripe = MetricsStripe(table, metrics)
 
     abstract val sidebar: FilterSidebar<T>
 
@@ -185,10 +192,11 @@ sealed class LogPanel<T : LogEvent>(
             VerticalSplitPane(
                 HorizontalSplitPane(
                     sidebarContainer,
-                    JPanel(MigLayout("ins 0, fill, gapx 0")).apply {
+                    JPanel(MigLayout("ins 0, fill, gapx 0, hidemode 3")).apply {
                         add(header, "wrap, growx, spanx")
                         add(tableScrollPane, "grow, push")
                         add(markerStripe, "growy, w 14!")
+                        add(metricsStripe, "growy, w 14!")
                     },
                     resizeWeight = 0.1,
                 ),
@@ -360,7 +368,7 @@ sealed class LogPanel<T : LogEvent>(
                 }
     }
 
-    protected class Header : JPanel(MigLayout("ins 0, fill, hidemode 3")) {
+    protected class Header(metrics: MetricsStripeState) : JPanel(MigLayout("ins 0, fill, hidemode 3")) {
         val search = JXSearchField("")
 
         val version: JComboBox<MajorVersion> =
@@ -409,6 +417,12 @@ sealed class LogPanel<T : LogEvent>(
             add(highlightMarked)
         }
 
+        private val metricsPanel = JPanel(MigLayout("fill, ins 0 2 0 2")).apply {
+            border = BorderFactory.createTitledBorder("Metrics")
+            add(metricsModeSelector(metrics), "growy")
+            add(metricsFileButton(metrics))
+        }
+
         private val searchPanel = JPanel(MigLayout("fill, ins 0 2 0 2")).apply {
             border = BorderFactory.createTitledBorder("Search")
             add(search, "grow")
@@ -423,6 +437,7 @@ sealed class LogPanel<T : LogEvent>(
         init {
             add(markedPanel, "cell 0 0, growy")
             add(versionPanel, "cell 0 0, growy")
+            add(metricsPanel, "cell 0 0, growy")
             add(searchPanel, "cell 0 0, grow, push")
             updateVersionVisibility()
             UseHyperlinks.addChangeListener { updateVersionVisibility() }
