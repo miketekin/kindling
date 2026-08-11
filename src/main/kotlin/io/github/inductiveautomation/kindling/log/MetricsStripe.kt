@@ -138,6 +138,27 @@ internal fun metricsFileButton(metrics: MetricsStripeState): JButton = JButton(F
     }
 }
 
+internal fun loadMissingSeries(metrics: MetricsStripeState, parent: JComponent) {
+    if (metrics.source == null) return
+    EDT_SCOPE.launch {
+        // sequential, re-reading the source each pass - two concurrent loads would each
+        // copy() a stale base and drop the other's freshly loaded series
+        for (mode in listOf(MetricsMode.Cpu, MetricsMode.Memory)) {
+            val base = metrics.source ?: return@launch
+            if (metrics.series(mode) != null) continue
+            try {
+                val series = loadSeries(metrics, base, mode, parent) ?: continue
+                metrics.source = when (mode) {
+                    MetricsMode.Memory -> base.copy(memory = series)
+                    else -> base.copy(cpu = series)
+                }
+            } catch (e: Exception) {
+                JOptionPane.showMessageDialog(parent, e.message, "Gateway Metrics", JOptionPane.ERROR_MESSAGE)
+            }
+        }
+    }
+}
+
 private fun formatRange(startMillis: Long, endMillis: Long): String = "${Timezone.Default.format(Instant.ofEpochMilli(startMillis))} - ${Timezone.Default.format(Instant.ofEpochMilli(endMillis))}"
 
 private fun loadAndActivate(metrics: MetricsStripeState, mode: MetricsMode, parent: JComponent, chooseNewFile: Boolean) {
@@ -153,53 +174,7 @@ private fun loadAndActivate(metrics: MetricsStripeState, mode: MetricsMode, pare
                 metrics.source = base
                 return@launch
             }
-            val choices = when (mode) {
-                MetricsMode.Memory -> heapUsedCandidates(base.metricNames)
-                else -> metricCandidates(base.metricNames, "cpu")
-            }.ifEmpty { base.metricNames.sorted() }
-            val metricName = choices.singleOrNull() ?: pickMetric(parent, choices, mode) ?: return@launch
-            val maxName = if (mode == MetricsMode.Memory) heapMaxFor(metricName, base.metricNames) else null
-
-            val gatewayZone = base.gatewayInfo?.zone
-            val heapMax = base.gatewayInfo?.heapMax
-            val series = withContext(Dispatchers.IO) {
-                // Wrapper logs parse their zone-less wall-clock text in the viewer's system zone
-                // (WrapperLogPanel.DEFAULT_WRAPPER_LOG_TIME_FORMAT), so absolute metric samples are
-                // re-mapped into that same frame to keep the stripe aligned with the table. Remove
-                // this remap if wrapper log or metrics parsing ever becomes zone-aware.
-                val data = readSeries(path, listOfNotNull(metricName, maxName)).mapValues { (_, samples) ->
-                    if (metrics.wallClockTimestamps && gatewayZone != null) {
-                        remapWallClock(samples, gatewayZone, ZoneId.systemDefault())
-                    } else {
-                        samples
-                    }
-                }
-                when (mode) {
-                    MetricsMode.Memory -> {
-                        val used = data[metricName].orEmpty()
-                        val max = when {
-                            maxName != null -> data[maxName].orEmpty()
-                            heapMax != null -> used.take(1).map { MetricData(heapMax, it.timestamp) }
-                            else -> emptyList()
-                        }
-                        MetricSeries.heap(used, max)
-                    }
-                    else -> MetricSeries.cpu(data[metricName].orEmpty())
-                }
-            }
-            checkNotNull(series) { "$metricName has no data points" }
-
-            val logRange = metrics.logRange()
-            check(series.overlaps(logRange.first, logRange.last)) {
-                buildString {
-                    append("${path.name} covers ${formatRange(series.firstTimestamp, series.lastTimestamp)}, but the log covers ${formatRange(logRange.first, logRange.last)}")
-                    if (metrics.wallClockTimestamps && gatewayZone == null) {
-                        val reason = if (base.gatewayInfo == null) "No gateway-info.json was found beside ${path.name}" else "No gateway timezone could be read from the gateway-info.json beside ${path.name}"
-                        append("\n\n$reason - if the gateway is in another timezone, these ranges may be shifted apart.")
-                    }
-                }
-            }
-
+            val series = loadSeries(metrics, base, mode, parent) ?: return@launch
             metrics.source = when (mode) {
                 MetricsMode.Memory -> base.copy(memory = series)
                 else -> base.copy(cpu = series)
@@ -209,6 +184,56 @@ private fun loadAndActivate(metrics: MetricsStripeState, mode: MetricsMode, pare
             JOptionPane.showMessageDialog(parent, e.message, "Gateway Metrics", JOptionPane.ERROR_MESSAGE)
         }
     }
+}
+
+private suspend fun loadSeries(metrics: MetricsStripeState, base: MetricsSource, mode: MetricsMode, parent: JComponent): MetricSeries? {
+    val choices = when (mode) {
+        MetricsMode.Memory -> heapUsedCandidates(base.metricNames)
+        else -> metricCandidates(base.metricNames, "cpu")
+    }.ifEmpty { base.metricNames.sorted() }
+    val metricName = choices.singleOrNull() ?: pickMetric(parent, choices, mode) ?: return null
+    val maxName = if (mode == MetricsMode.Memory) heapMaxFor(metricName, base.metricNames) else null
+
+    val gatewayZone = base.gatewayInfo?.zone
+    val heapMax = base.gatewayInfo?.heapMax
+    val series = withContext(Dispatchers.IO) {
+        // Wrapper logs parse their zone-less wall-clock text in the viewer's system zone
+        // (WrapperLogPanel.DEFAULT_WRAPPER_LOG_TIME_FORMAT), so absolute metric samples are
+        // re-mapped into that same frame to keep the stripe aligned with the table. Remove
+        // this remap if wrapper log or metrics parsing ever becomes zone-aware.
+        val data = readSeries(base.path, listOfNotNull(metricName, maxName)).mapValues { (_, samples) ->
+            if (metrics.wallClockTimestamps && gatewayZone != null) {
+                remapWallClock(samples, gatewayZone, ZoneId.systemDefault())
+            } else {
+                samples
+            }
+        }
+        when (mode) {
+            MetricsMode.Memory -> {
+                val used = data[metricName].orEmpty()
+                val max = when {
+                    maxName != null -> data[maxName].orEmpty()
+                    heapMax != null -> used.take(1).map { MetricData(heapMax, it.timestamp) }
+                    else -> emptyList()
+                }
+                MetricSeries.heap(used, max)
+            }
+            else -> MetricSeries.cpu(data[metricName].orEmpty())
+        }
+    }
+    checkNotNull(series) { "$metricName has no data points" }
+
+    val logRange = metrics.logRange()
+    check(series.overlaps(logRange.first, logRange.last)) {
+        buildString {
+            append("${base.path.name} covers ${formatRange(series.firstTimestamp, series.lastTimestamp)}, but the log covers ${formatRange(logRange.first, logRange.last)}")
+            if (metrics.wallClockTimestamps && gatewayZone == null) {
+                val reason = if (base.gatewayInfo == null) "No gateway-info.json was found beside ${base.path.name}" else "No gateway timezone could be read from the gateway-info.json beside ${base.path.name}"
+                append("\n\n$reason - if the gateway is in another timezone, these ranges may be shifted apart.")
+            }
+        }
+    }
+    return series
 }
 
 private fun chooseMetricsFile(parent: JComponent, startDirectory: Path?): Path? {

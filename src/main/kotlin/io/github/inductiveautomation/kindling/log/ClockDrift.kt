@@ -5,14 +5,20 @@ import io.github.inductiveautomation.kindling.core.Theme.Companion.theme
 import io.github.inductiveautomation.kindling.core.Timezone
 import org.jfree.chart.ChartFactory
 import org.jfree.chart.JFreeChart
+import org.jfree.chart.axis.AxisLocation
+import org.jfree.chart.axis.NumberAxis
 import org.jfree.chart.plot.PlotOrientation
+import org.jfree.chart.plot.XYPlot
 import org.jfree.chart.renderer.xy.StandardXYBarPainter
 import org.jfree.chart.renderer.xy.XYBarRenderer
+import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer
 import org.jfree.chart.ui.RectangleInsets
 import org.jfree.data.xy.XYBarDataset
 import org.jfree.data.xy.XYSeries
 import org.jfree.data.xy.XYSeriesCollection
 import java.time.Instant
+import javax.swing.UIManager
+import kotlin.math.roundToInt
 
 data class ClockDriftData(
     val timestamp: Instant,
@@ -33,7 +39,7 @@ fun LogEvent.toClockDriftData(): ClockDriftData? {
     return ClockDriftData(timestamp, deviation)
 }
 
-fun clockDriftChart(data: List<ClockDriftData>): JFreeChart {
+fun clockDriftChart(data: List<ClockDriftData>, metrics: MetricsStripeState? = null): JFreeChart {
     val dataset = XYBarDataset(
         XYSeriesCollection(
             XYSeries("Clock Drift").apply {
@@ -59,7 +65,7 @@ fun clockDriftChart(data: List<ClockDriftData>): JFreeChart {
         /* orientation = */
         PlotOrientation.VERTICAL,
         /* legend = */
-        false,
+        metrics?.source != null,
         /* tooltips = */
         true,
         /* urls = */
@@ -99,6 +105,12 @@ fun clockDriftChart(data: List<ClockDriftData>): JFreeChart {
                 updateTooltipGenerator()
             }
 
+            // usage lines join only when a metrics file is already loaded; a source loaded
+            // later is picked up by reopening the chart
+            if (metrics?.source != null) {
+                addUsageLines(metrics)
+            }
+
             isDomainGridlinesVisible = false
             isRangeGridlinesVisible = false
             isOutlineVisible = false
@@ -111,5 +123,83 @@ fun clockDriftChart(data: List<ClockDriftData>): JFreeChart {
         Theme.addChangeListener { newTheme ->
             theme = newTheme
         }
+    }
+}
+
+private fun XYPlot.addUsageLines(metrics: MetricsStripeState) {
+    setRangeAxis(
+        1,
+        NumberAxis("Usage (%)").apply {
+            setRange(0.0, 100.0)
+            isPositiveArrowVisible = true
+        },
+    )
+    setRangeAxisLocation(1, AxisLocation.BOTTOM_OR_RIGHT)
+    mapDatasetToRangeAxis(1, 1)
+
+    val lineRenderer = XYLineAndShapeRenderer(true, false)
+    setRenderer(1, lineRenderer)
+
+    fun updateLinePaints() {
+        val lines = getDataset(1) ?: return
+        for (series in 0 until lines.seriesCount) {
+            lineRenderer.setSeriesPaint(
+                series,
+                UIManager.getColor(if (lines.getSeriesKey(series) == "CPU") "Actions.Blue" else "Actions.Green"),
+            )
+        }
+    }
+
+    fun updateLineDataset() {
+        val source = metrics.source
+        setDataset(
+            1,
+            XYSeriesCollection().apply {
+                source?.cpu?.let { addSeries(it.toPercentSeries("CPU")) }
+                source?.memory?.let { addSeries(it.toPercentSeries(if (it.peakNormalized) "Memory (% of peak)" else "Memory")) }
+            },
+        )
+        updateLinePaints()
+    }
+
+    updateLineDataset()
+    metrics.addChangeListener { updateLineDataset() }
+    Theme.addChangeListener { updateLinePaints() }
+
+    val updateLineTooltipGenerator = {
+        lineRenderer.setDefaultToolTipGenerator { dataset, series, item ->
+            val usage = dataset.getYValue(series, item)
+            if (usage.isNaN()) {
+                // the artificial items that break lines at coverage gaps carry no value
+                null
+            } else {
+                val millis = dataset.getXValue(series, item).toLong()
+                val time = Timezone.Default.format(Instant.ofEpochMilli(millis))
+                val percent = usage.roundToInt()
+                val memory = metrics.source?.memory?.takeUnless { dataset.getSeriesKey(series) == "CPU" }
+                val sample = memory?.sampleNear(millis)
+                if (memory != null && sample != null) {
+                    val share = if (memory.peakNormalized) "$percent% of peak" else "$percent%"
+                    "Heap %.1f mB (%s) - %s".format(sample.raw / 1_000_000, share, time)
+                } else {
+                    "${dataset.getSeriesKey(series)} $percent% - $time"
+                }
+            }
+        }
+    }
+    updateLineTooltipGenerator()
+    Timezone.Default.addChangeListener { updateLineTooltipGenerator() }
+}
+
+// null y-values break the polyline at coverage gaps, so a gateway-down window
+// doesn't draw as a bridge between its endpoints
+internal fun MetricSeries.toPercentSeries(key: String): XYSeries = XYSeries(key).apply {
+    var previous = Long.MIN_VALUE
+    forEachSample { sample ->
+        if (previous != Long.MIN_VALUE && sample.timestampMillis - previous > gapToleranceMillis) {
+            add((previous + sample.timestampMillis) / 2.0, null, false)
+        }
+        add(sample.timestampMillis.toDouble(), sample.fraction * 100, false)
+        previous = sample.timestampMillis
     }
 }
