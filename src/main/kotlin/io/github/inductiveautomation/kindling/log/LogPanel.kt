@@ -329,13 +329,14 @@ sealed class LogPanel<T : LogEvent>(
                 clockDrift.toolTipText = "No clock drift events found"
             } else {
                 clockDrift.addActionListener {
+                    loadMissingSeries(metrics, clockDrift)
                     val source = this@LogPanel.name ?: this@LogPanel.getAncestorOfClass<ToolPanel>()?.name
                     jFrame(
                         title = listOfNotNull("Clock Drift", source).joinToString(" - "),
                         width = 800,
                         height = 600,
                     ) {
-                        add(ChartPanel(clockDriftChart(clockDriftData)))
+                        add(ChartPanel(clockDriftChart(clockDriftData, metrics)))
                     }
                 }
             }
