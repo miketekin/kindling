@@ -31,12 +31,12 @@ import kotlin.io.path.useLines
 class WrapperLogPanel(
     paths: List<Path>,
     fileData: List<LogFile<WrapperLogEvent>>,
-) : LogPanel<WrapperLogEvent>(fileData.flatMap { it.items }, WrapperLogColumns) {
+) : LogPanel<WrapperLogEvent>(fileData.flatMap { it.items }, WrapperLogColumns, wallClockTimestamps = true) {
 
     override val sidebar = FileFilterSidebar(
         listOf(
-            LoggerNamePanel(rawData),
-            LevelPanel(rawData),
+            LoggerNamePanel(rawData, stripe),
+            LevelPanel(rawData, stripe),
             TimePanel(rawData),
         ),
         fileData = paths.zip(fileData).toMap(),

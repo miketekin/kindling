@@ -5,11 +5,16 @@ import com.jidesoft.comparator.AlphanumComparator
 import com.jidesoft.swing.CheckBoxList
 import com.jidesoft.swing.ListSearchable
 import io.github.inductiveautomation.kindling.utils.FilterComparator.ByCountDescending
+import java.awt.Point
+import java.awt.event.MouseEvent
 import java.text.DecimalFormat
 import javax.swing.AbstractListModel
 import javax.swing.ButtonGroup
+import javax.swing.Icon
+import javax.swing.JCheckBox
 import javax.swing.JToggleButton
 import javax.swing.ListModel
+import javax.swing.SwingUtilities
 
 data class FilterModelEntry(
     val key: String?,
@@ -116,6 +121,14 @@ class FilterList(
 
     var comparatorIsAdjusting = false
 
+    /** Optional per-item icon, rendered between the checkbox and the label. */
+    var iconFn: ((Any?) -> Icon?)? = null
+
+    /** Left clicks on a visible item icon are swallowed (no checkbox toggle) and routed here. */
+    var iconClickHandler: ((value: Any?, event: MouseEvent) -> Unit)? = null
+
+    private val checkBoxHotspot = JCheckBox().preferredSize.width
+
     init {
         selectionModel = NoSelectionModel()
         isClickInCheckBoxOnly = false
@@ -128,6 +141,7 @@ class FilterList(
 
                 else -> {
                     text = "${toStringFn(value)} [${model.data[value]}] (${model.percentages[value]})"
+                    icon = iconFn?.invoke(value)
                     toolTipText = tooltipToStringFn?.let { stringifier ->
                         "${stringifier(value)} [${model.data[value]}] (${model.percentages[value]})"
                     } ?: text
@@ -153,6 +167,32 @@ class FilterList(
     fun select(value: Any?) {
         val rowToSelect = model.indexOf(value)
         checkBoxListSelectionModel.setSelectionInterval(rowToSelect, rowToSelect)
+    }
+
+    // consume icon-zone clicks before JIDE's handler toggles the checkbox on mouse press
+    override fun processMouseEvent(e: MouseEvent) {
+        if (iconClickHandler != null && SwingUtilities.isLeftMouseButton(e) &&
+            (e.id == MouseEvent.MOUSE_PRESSED || e.id == MouseEvent.MOUSE_RELEASED || e.id == MouseEvent.MOUSE_CLICKED)
+        ) {
+            val value = iconValueAt(e.point)
+            if (value != null) {
+                e.consume()
+                if (e.id == MouseEvent.MOUSE_CLICKED) {
+                    iconClickHandler?.invoke(value, e)
+                }
+            }
+        }
+        super.processMouseEvent(e)
+    }
+
+    private fun iconValueAt(point: Point): Any? {
+        val index = locationToIndex(point)
+        if (index <= 0) return null
+        val cell = getCellBounds(index, index) ?: return null
+        if (!cell.contains(point)) return null
+        val value = model.getElementAt(index)
+        if (iconFn?.invoke(value) == null) return null
+        return value.takeIf { point.x - cell.x - checkBoxHotspot in 0 until ICON_HIT_WIDTH }
     }
 
     var comparator: FilterComparator = initialComparator
@@ -221,5 +261,9 @@ class FilterList(
                 ),
             )
         }
+    }
+
+    companion object {
+        private const val ICON_HIT_WIDTH = 20
     }
 }

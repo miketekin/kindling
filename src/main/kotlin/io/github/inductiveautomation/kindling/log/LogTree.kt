@@ -7,6 +7,10 @@ import io.github.inductiveautomation.kindling.utils.AbstractTreeNode
 import io.github.inductiveautomation.kindling.utils.TypedTreeNode
 import io.github.inductiveautomation.kindling.utils.selectAll
 import io.github.inductiveautomation.kindling.utils.treeCellRenderer
+import java.awt.Point
+import java.awt.event.MouseEvent
+import javax.swing.JCheckBox
+import javax.swing.SwingUtilities
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreeNode
 import javax.swing.tree.TreePath
@@ -85,22 +89,28 @@ class RootNode(logEvents: List<SystemLogEvent>) : AbstractTreeNode() {
     }
 }
 
-class LogTree(logEvents: List<SystemLogEvent>) : CheckBoxTree(DefaultTreeModel(RootNode(logEvents))) {
+class LogTree(
+    logEvents: List<SystemLogEvent>,
+    private val stripe: StripeState? = null,
+) : CheckBoxTree(DefaultTreeModel(RootNode(logEvents))) {
+    private val checkBoxHotspot = JCheckBox().preferredSize.width
+
     init {
         setShowsRootHandles(false)
         isClickInCheckBoxOnly = false
         selectAll()
 
         setCellRenderer(
-            treeCellRenderer { _, value, _, _, _, _, _ ->
+            treeCellRenderer { _, value, _, _, leaf, _, _ ->
                 if (value is LogEventNode) {
                     val path = value.userObject
                     text = "${path.lastOrNull()} [${value.frequency}]"
                     toolTipText = value.name
+                    icon = if (leaf) stripe?.swatchIcon(StripeMode.Loggers, value.name) else null
                 } else {
                     text = "(All)"
+                    icon = null
                 }
-                icon = null
                 this
             },
         )
@@ -124,4 +134,32 @@ class LogTree(logEvents: List<SystemLogEvent>) : CheckBoxTree(DefaultTreeModel(R
                 sequenceOf(it.lastPathComponent)
             }
         }.filterIsInstance<LogEventNode>()
+
+    // consume swatch-zone clicks before JIDE's handler toggles the checkbox on mouse press
+    override fun processMouseEvent(e: MouseEvent) {
+        val stripe = stripe
+        if (stripe != null && stripe.mode == StripeMode.Loggers && SwingUtilities.isLeftMouseButton(e) &&
+            (e.id == MouseEvent.MOUSE_PRESSED || e.id == MouseEvent.MOUSE_RELEASED || e.id == MouseEvent.MOUSE_CLICKED)
+        ) {
+            val node = swatchNodeAt(e.point)
+            if (node != null) {
+                e.consume()
+                if (e.id == MouseEvent.MOUSE_CLICKED) {
+                    stripe.swatchPopup(StripeMode.Loggers, node.name, this).show(this, e.x, e.y)
+                }
+            }
+        }
+        super.processMouseEvent(e)
+    }
+
+    private fun swatchNodeAt(point: Point): LogEventNode? {
+        val path = getPathForLocation(point.x, point.y) ?: return null
+        val node = (path.lastPathComponent as? LogEventNode)?.takeIf { it.isLeaf } ?: return null
+        val bounds = getPathBounds(path) ?: return null
+        return node.takeIf { point.x - bounds.x - checkBoxHotspot in 0 until SWATCH_HIT_WIDTH }
+    }
+
+    companion object {
+        private const val SWATCH_HIT_WIDTH = 20
+    }
 }
