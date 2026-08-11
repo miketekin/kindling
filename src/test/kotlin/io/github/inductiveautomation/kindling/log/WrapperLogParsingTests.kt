@@ -8,6 +8,8 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldBeEmpty
+import java.time.LocalDateTime
+import java.time.ZoneId
 import kotlin.io.path.Path
 import kotlin.io.path.name
 
@@ -412,6 +414,17 @@ class WrapperLogParsingTests :
                         }
                     }
                 }
+            }
+
+            test("Timestamps resolve in the system zone") {
+                // pinned deliberately: the metrics stripe re-maps metric samples into this frame
+                // (see the remap in MetricsStripe's loadAndActivate) and must change along with it
+                val event = parse(
+                    """
+            INFO   | jvm 1    | 2021/03/14 08:49:25 | I [t.h.q.PartitionManager        ] [07:49:25]: Ignition Created Tag history partition sqlt_data_1_20210314
+            """,
+                ).single()
+                event.timestamp shouldBe LocalDateTime.of(2021, 3, 14, 8, 49, 25).atZone(ZoneId.systemDefault()).toInstant()
             }
         },
     ) {

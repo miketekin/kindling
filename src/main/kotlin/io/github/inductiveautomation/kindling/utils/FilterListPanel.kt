@@ -2,17 +2,19 @@ package io.github.inductiveautomation.kindling.utils
 
 import io.github.inductiveautomation.kindling.core.FilterChangeListener
 import io.github.inductiveautomation.kindling.core.FilterPanel
+import javax.swing.AbstractButton
 import javax.swing.JPopupMenu
 
 abstract class FilterListPanel<T>(
     override val tabName: String,
     toStringFn: Stringifier = { it?.toString() },
+    extraButtons: List<AbstractButton> = emptyList(),
 ) : FilterPanel<T>() {
     val filterList = FilterList(toStringFn = toStringFn)
 
     private val sortButtons = filterList.createSortButtons()
 
-    override val component = ButtonPanel(sortButtons).apply {
+    override val component = ButtonPanel(sortButtons.elements.toList() + extraButtons).apply {
         add(FlatScrollPane(filterList), "newline, push, grow, align right")
     }
 

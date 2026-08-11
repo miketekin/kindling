@@ -32,8 +32,10 @@ import javax.swing.JScrollPane
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
 
-class LoggerNamePanel<T : LogEvent>(private val rawData: List<T>) :
-    FilterPanel<T>(),
+class LoggerNamePanel<T : LogEvent>(
+    private val rawData: List<T>,
+    private val stripe: StripeState,
+) : FilterPanel<T>(),
     PopupMenuCustomizer,
     FileFilterResponsive<T> {
     private val isTreeAvailable = rawData.first() is SystemLogEvent
@@ -59,6 +61,11 @@ class LoggerNamePanel<T : LogEvent>(private val rawData: List<T>) :
 
         // Right clicking will check and uncheck an item. We don't want that for this list.
         isClickInCheckBoxOnly = true
+
+        iconFn = { value -> (value as? String)?.let { stripe.swatchIcon(StripeMode.Loggers, it) } }
+        iconClickHandler = { value, e ->
+            stripe.swatchPopup(StripeMode.Loggers, value as String, this).show(this, e.x, e.y)
+        }
 
         ShowFullLoggerNames.addChangeListener {
             model = model.copy(comparator)
@@ -86,6 +93,10 @@ class LoggerNamePanel<T : LogEvent>(private val rawData: List<T>) :
 
     private val sortButtons = filterList.createSortButtons()
 
+    private val listToggle = categoryToggleButton(stripe, StripeMode.Loggers, "Color stripe by logger")
+
+    private val treeToggle = categoryToggleButton(stripe, StripeMode.Loggers, "Color stripe by logger")
+
     @Suppress("UNCHECKED_CAST")
     private val filterTree: LogTree = LogTree(
         if (isTreeAvailable) {
@@ -93,6 +104,7 @@ class LoggerNamePanel<T : LogEvent>(private val rawData: List<T>) :
         } else {
             emptyList()
         },
+        stripe,
     ).apply {
         selectionModel = NoSelectionModel()
         checkBoxTreeSelectionModel.addTreeSelectionListener {
@@ -164,7 +176,7 @@ class LoggerNamePanel<T : LogEvent>(private val rawData: List<T>) :
         !filterList.checkBoxListSelectionModel.isAllSelected()
     }
 
-    private val mainListComponent = ButtonPanel(sortButtons).apply {
+    private val mainListComponent = ButtonPanel(sortButtons.elements.toList() + listToggle).apply {
         add(FlatScrollPane(filterList), "newline, push, grow, align right")
         isVisible = !isTreeMode
     }
@@ -187,6 +199,7 @@ class LoggerNamePanel<T : LogEvent>(private val rawData: List<T>) :
                     filterTree.collapseAll()
                 },
             ),
+            treeToggle,
         ),
     ).apply {
         add(JScrollPane(filterTree), "newline, push, grow, span")
@@ -198,6 +211,11 @@ class LoggerNamePanel<T : LogEvent>(private val rawData: List<T>) :
             ShowLogTree.addChangeListener {
                 isTreeMode = it
             }
+        }
+
+        stripe.addChangeListener {
+            filterList.repaint()
+            filterTree.repaint()
         }
     }
 

@@ -10,7 +10,11 @@ import javax.swing.JPopupMenu
 
 internal class ThreadPanel(
     events: List<SystemLogEvent>,
-) : FilterListPanel<SystemLogEvent>("Threads"),
+    private val stripe: StripeState,
+) : FilterListPanel<SystemLogEvent>(
+    "Threads",
+    extraButtons = listOf(categoryToggleButton(stripe, StripeMode.Threads, "Color stripe by thread")),
+),
     FileFilterResponsive<SystemLogEvent> {
     override val icon = FlatSVGIcon("icons/bx-chip.svg")
 
@@ -18,7 +22,14 @@ internal class ThreadPanel(
         filterList.apply {
             setModel(FilterModel.fromRawData(events, filterList.comparator) { it.thread })
             selectAll()
+
+            iconFn = { value -> (value as? String)?.let { stripe.swatchIcon(StripeMode.Threads, it) } }
+            iconClickHandler = { value, e ->
+                stripe.swatchPopup(StripeMode.Threads, value as String, this).show(this, e.x, e.y)
+            }
         }
+
+        stripe.addChangeListener { filterList.repaint() }
     }
 
     override fun setModelData(data: List<SystemLogEvent>) {
