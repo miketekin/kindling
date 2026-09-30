@@ -1,15 +1,19 @@
 package io.github.inductiveautomation.kindling.log
 
+import io.github.inductiveautomation.kindling.idb.metrics.MetricData
 import io.kotest.assertions.asClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.doubles.plusOrMinus
+import io.kotest.matchers.doubles.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import org.jfree.data.Range
 import org.jfree.data.xy.XYBarDataset
+import java.nio.file.Path
 import java.time.Instant
+import java.util.Date
 
 class ClockDriftTests :
     FunSpec(
@@ -111,6 +115,68 @@ class ClockDriftTests :
                 chart.xyPlot.domainAxis.range = Range(base, base + 80_000.0)
 
                 (chart.xyPlot.dataset as XYBarDataset).barWidth shouldBe (100.0 plusOrMinus 1.0)
+            }
+
+            test("Metric samples convert to percent points") {
+                MetricSeries.cpu(
+                    listOf(
+                        MetricData(25.0, Date(0L)),
+                        MetricData(50.0, Date(10_000L)),
+                    ),
+                ).shouldNotBeNull().toPercentSeries("CPU").asClue { line ->
+                    line.itemCount shouldBe 2
+                    line.getY(0) shouldBe 25.0
+                    line.getY(1) shouldBe 50.0
+                }
+            }
+
+            test("Gaps wider than the tolerance break the line") {
+                // 10s cadence, then a 5-minute hole - far beyond the 30s tolerance floor
+                val samples = List(6) { MetricData(50.0, Date(it * 10_000L)) } + MetricData(80.0, Date(350_000L))
+                MetricSeries.cpu(samples).shouldNotBeNull().toPercentSeries("CPU").asClue { line ->
+                    line.itemCount shouldBe samples.size + 1
+                    (0 until line.itemCount).count { line.getY(it) == null } shouldBe 1
+                }
+            }
+
+            test("Metric lines ride a secondary percent axis") {
+                val halfDay = 43_200L
+                val cpu = MetricSeries.cpu(
+                    listOf(
+                        MetricData(25.0, Date(timestamp.minusSeconds(halfDay).toEpochMilli())),
+                        MetricData(75.0, Date(timestamp.plusSeconds(halfDay).toEpochMilli())),
+                    ),
+                )
+                val memory = MetricSeries.heap(
+                    used = listOf(
+                        MetricData(1_000_000.0, Date(timestamp.toEpochMilli())),
+                        MetricData(2_000_000.0, Date(timestamp.plusSeconds(60).toEpochMilli())),
+                    ),
+                    max = emptyList(),
+                )
+                val metrics = MetricsStripeState(wallClockTimestamps = false) { 0L..0L }.apply {
+                    source = MetricsSource(Path.of("metrics.idb"), emptyList(), cpu = cpu, memory = memory)
+                }
+
+                val chart = clockDriftChart(listOf(ClockDriftData(timestamp, 1500)), metrics)
+
+                chart.legend.shouldNotBeNull()
+                chart.xyPlot.asClue { plot ->
+                    plot.getRangeAxis(1).range shouldBe Range(0.0, 100.0)
+                    plot.getDataset(1).seriesCount shouldBe 2
+                    plot.getDataset(1).getSeriesKey(0) shouldBe "CPU"
+                    plot.getDataset(1).getSeriesKey(1) shouldBe "Memory (% of peak)"
+                    // the domain auto-ranges over the union of both datasets - the metric
+                    // extent here is a full day, the drift extent a single instant
+                    plot.domainAxis.range.length shouldBeGreaterThan 86_400_000.0
+                }
+            }
+
+            test("Without metrics the chart is unchanged") {
+                val chart = clockDriftChart(listOf(ClockDriftData(timestamp, 1500)))
+                chart.legend.shouldBeNull()
+                chart.xyPlot.datasetCount shouldBe 1
+                chart.xyPlot.getRangeAxis(1).shouldBeNull()
             }
         },
     )

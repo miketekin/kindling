@@ -42,6 +42,12 @@ class MetricSeries private constructor(
         }
     }
 
+    fun forEachSample(action: (MetricSample) -> Unit) {
+        for (index in timestamps.indices) {
+            action(MetricSample(timestamps[index], fractions[index], rawValues[index]))
+        }
+    }
+
     fun overlaps(startMillis: Long, endMillis: Long): Boolean = startMillis <= lastTimestamp + gapToleranceMillis && endMillis >= firstTimestamp - gapToleranceMillis
 
     companion object {

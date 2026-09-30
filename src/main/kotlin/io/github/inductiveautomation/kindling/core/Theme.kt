@@ -68,9 +68,15 @@ data class Theme(
                 xyPlot.apply {
                     backgroundPaint = UIManager.getColor("Panel.background")
                     domainAxis.tickLabelPaint = UIManager.getColor("ColorChooser.foreground")
-                    rangeAxis.tickLabelPaint = UIManager.getColor("ColorChooser.foreground")
+                    for (index in 0 until rangeAxisCount) {
+                        getRangeAxis(index)?.tickLabelPaint = UIManager.getColor("ColorChooser.foreground")
+                    }
                 }
                 backgroundPaint = UIManager.getColor("Panel.background")
+                legend?.apply {
+                    backgroundPaint = UIManager.getColor("Panel.background")
+                    itemPaint = UIManager.getColor("ColorChooser.foreground")
+                }
             }
     }
 }
