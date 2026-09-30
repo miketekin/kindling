@@ -1,3 +1,94 @@
+# Log viewer features (fork)
+
+Five additions to the log viewer, built on upstream `main`. Each has its own
+branch. This branch, `demo`, has all five merged so they can be run together.
+
+None of this has been submitted upstream yet.
+
+![log view with both stripes and the drift chart popout open](docs/fork/09-hero.png)
+
+## Who did what
+
+The code on these branches was written by an AI coding agent
+([Claude Code](https://claude.com/claude-code)), working under my direction.
+Each feature's commit carries its co-author trailer.
+
+My work was:
+
+- deciding which problems were worth solving
+- deciding how each feature should behave for someone reading gateway logs
+- designing the way of working: a sequence of phases, each one there to
+  avoid or soften a failure that AI-assisted coding is prone to. They are
+  described in [How it was built](how-it-was-built.md).
+- steering within it: setting the rules the code had to follow, approving
+  each plan before any code was written, and making the call where there was
+  a trade-off
+- testing every feature by hand, and sending it back when it was wrong
+
+## The features
+
+| # | Feature | The question it answers | Change |
+|---|---|---|---|
+| 1 | Clock drift chart | Are the clock drift warnings significant: how often, how large, and when? | [Pull request 1](https://github.com/miketekin/kindling/pull/1) |
+| 2 | Marker stripe | Where in this log are the rows I marked? With level coloring on: where are the bursts of warnings and errors? | [Pull request 2](https://github.com/miketekin/kindling/pull/2) |
+| 3 | Logger and thread colors | Which logger or thread dominates each part of the log? | [Pull request 3](https://github.com/miketekin/kindling/pull/3) |
+| 4 | Gateway metrics stripe | Was the gateway under CPU or memory pressure when this was logged? | [Pull request 4](https://github.com/miketekin/kindling/pull/4) |
+| 5 | Usage overlay on the drift chart | Do the drifts line up with memory or CPU pressure? | [Pull request 5](https://github.com/miketekin/kindling/pull/5) |
+
+Features 3 and 4 build on 2. Feature 5 builds on 1 and 4.
+
+```
+main ─┬─ clock-drift-chart ───────────────────────────────────────────┐
+      └─ log-marker-stripe ── logger-stripe-colors ── metrics-stripe ─┴─ drift-metrics-chart
+```
+
+## How it was built
+
+
+I designed a way of working for the AI and steered within it. The detail is
+on a second page, [How it was built](how-it-was-built.md):
+
+- the eight phases of the work, and the failure each one guards against
+- 19 new pieces, each with the existing Kindling code it was modeled on
+- 22 of the decisions I made, with the reason for each
+- ten things that my testing by hand changed
+
+## Run it
+
+```bash
+git clone https://github.com/miketekin/kindling.git
+cd kindling
+./gradlew run
+```
+
+Then open a `wrapper.log` or a `system_logs.idb`.
+
+| To see | Do this |
+|---|---|
+| Drift chart | Click the chart button in the header's **Charts** group. It is disabled if the log has no drift events. |
+| Ticks for marked rows | Tick the checkbox on any row. A tick appears on the stripe beside the scroll bar, at that row's place in the log. |
+| Level coloring | In the **Levels** sidebar panel, click the palette button. |
+| Logger / thread colors | Click the palette button in the **Loggers** or **Threads** panel. Click a swatch to assign a color; right-click the palette button for **Auto (Top 5)** and **Clear Colors**. |
+| Metrics stripe | In the header's **Metrics** group, choose a `metrics.idb` with the folder button, then pick **CPU** or **Memory**. |
+| Usage overlay | Load a `metrics.idb` as above, then open the drift chart. |
+
+### An example: finding where the gateway shut down
+
+Anything you can mark, you can see across the whole log.
+
+1. Search for the shutdown message.
+2. Right-click it in the Message column and choose **Mark all with same
+   message**, which Kindling already has.
+3. Clear the search.
+
+Each shutdown now shows as a tick on the stripe. The arrows in the
+**Marking** group jump from one to the next.
+
+
+![the stripe with a tick at each shutdown](docs/fork/11-shutdown-ticks.png)
+
+---
+
 # Kindling
 
 A standalone desktop application targeted to advanced [Ignition](https://inductiveautomation.com/) users.
