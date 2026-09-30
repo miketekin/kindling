@@ -208,6 +208,7 @@ sealed class LogPanel<T : LogEvent>(
             }
             addPropertyChangeListener("model") {
                 footer.displayedRows = model.rowCount
+                stripe.updateAuto(model.data)
             }
 
             val clearAllMarks =
@@ -277,6 +278,8 @@ sealed class LogPanel<T : LogEvent>(
 
             addHighlighter(markHighlighter)
         }
+
+        stripe.updateAuto(table.model.data)
 
         header.apply {
             search.addActionListener {

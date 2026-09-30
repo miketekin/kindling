@@ -20,7 +20,7 @@ import javax.swing.table.TableModel
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-enum class StripeMode { Off, Levels }
+enum class StripeMode { Off, Levels, Loggers, Threads }
 
 fun interface StripeListener : EventListener {
     fun stripeChanged()
@@ -29,13 +29,34 @@ fun interface StripeListener : EventListener {
 class StripeState {
     private val listeners = EventListenerList()
 
+    val loggerColors = CategoryColors(LogEvent::logger, ::fireChanged)
+    val threadColors = CategoryColors({ (it as? SystemLogEvent)?.thread }, ::fireChanged)
+
     var mode: StripeMode = StripeMode.Off
         set(value) {
             if (field != value) {
                 field = value
+                colors(value)?.refreshAuto(latestData)
                 fireChanged()
             }
         }
+
+    private var latestData: List<LogEvent> = emptyList()
+
+    fun colors(mode: StripeMode): CategoryColors? = when (mode) {
+        StripeMode.Loggers -> loggerColors
+        StripeMode.Threads -> threadColors
+        else -> null
+    }
+
+    fun updateAuto(data: List<LogEvent>) {
+        latestData = data
+        colors(mode)?.refreshAuto(data)
+    }
+
+    fun resetToAuto(mode: StripeMode) {
+        colors(mode)?.resetToAuto(latestData)
+    }
 
     fun addChangeListener(listener: StripeListener) = listeners.add(listener)
 
@@ -140,6 +161,54 @@ internal class MarkerStripe(
                     g.fillRect(0, y, errorLength, 1)
                     g.color = warnColor
                     g.fillRect(errorLength, y, length - errorLength, 1)
+                }
+            }
+
+            StripeMode.Loggers, StripeMode.Threads -> {
+                val category = checkNotNull(stripe.colors(stripe.mode))
+                val assignments = category.assignments
+                val segmentColors = assignments.values.toList()
+                val indexByKey = assignments.keys.withIndex().associate { (index, key) -> key to index }
+                val totals = IntArray(track.height)
+                val counts = Array(track.height) { IntArray(segmentColors.size) }
+                for (viewRow in 0 until rowCount) {
+                    val event = table.model[table.convertRowIndexToModel(viewRow)]
+                    val bucket = (viewRow.toLong() * track.height / rowCount).toInt()
+                    totals[bucket]++
+                    category.keyFn(event)?.let { key -> indexByKey[key]?.let { counts[bucket][it]++ } }
+                    if (event.marked) {
+                        marks[bucket] = true
+                    }
+                }
+
+                for (bucket in totals.indices) {
+                    val colored = counts[bucket].sum()
+                    if (colored == 0) continue
+                    var remaining = counts[bucket].count { it > 0 }
+                    val length = maxOf(MIN_BAR_LENGTH, remaining, (barSpan * sqrt(colored.toFloat() / totals[bucket])).roundToInt())
+                        .coerceAtMost(barSpan)
+                    val y = track.y + bucket
+                    var x = 0
+                    var remainingLength = length
+                    var remainingCount = colored
+                    for (segment in segmentColors.indices) {
+                        val count = counts[bucket][segment]
+                        if (count == 0) continue
+                        remaining--
+                        // proportional share, clamped so every remaining segment keeps >= 1px
+                        val segmentLength = if (remaining == 0) {
+                            remainingLength
+                        } else {
+                            (remainingLength.toFloat() * count / remainingCount).roundToInt()
+                                .coerceIn(1, (remainingLength - remaining).coerceAtLeast(1))
+                        }
+                        g.color = segmentColors[segment]
+                        g.fillRect(x, y, segmentLength, 1)
+                        x += segmentLength
+                        remainingLength -= segmentLength
+                        remainingCount -= count
+                        if (remainingLength <= 0) break
+                    }
                 }
             }
         }

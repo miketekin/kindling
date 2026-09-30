@@ -25,10 +25,10 @@ class SystemLogPanel(
 
     override val sidebar = FileFilterSidebar(
         listOf(
-            LoggerNamePanel(rawData),
+            LoggerNamePanel(rawData, stripe),
             LevelPanel(rawData, stripe),
             MDCPanel(rawData),
-            ThreadPanel(rawData),
+            ThreadPanel(rawData, stripe),
             TimePanel(rawData),
         ),
         fileData = paths.zip(fileData).toMap(),
