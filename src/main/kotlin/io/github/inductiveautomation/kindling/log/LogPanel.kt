@@ -79,6 +79,8 @@ sealed class LogPanel<T : LogEvent>(
 
     private val footer = Footer(selectedData.size)
 
+    protected val stripe = StripeState()
+
     val table = run {
         val initialModel = createModel(rawData)
         ReifiedJXTable(initialModel, columnList).apply {
@@ -87,6 +89,8 @@ sealed class LogPanel<T : LogEvent>(
     }
 
     private val tableScrollPane = FlatScrollPane(table)
+
+    private val markerStripe = MarkerStripe(table, stripe)
 
     abstract val sidebar: FilterSidebar<T>
 
@@ -181,9 +185,10 @@ sealed class LogPanel<T : LogEvent>(
             VerticalSplitPane(
                 HorizontalSplitPane(
                     sidebarContainer,
-                    JPanel(MigLayout("ins 0, fill")).apply {
-                        add(header, "wrap, growx")
+                    JPanel(MigLayout("ins 0, fill, gapx 0")).apply {
+                        add(header, "wrap, growx, spanx")
                         add(tableScrollPane, "grow, push")
+                        add(markerStripe, "growy, w 14!")
                     },
                     resizeWeight = 0.1,
                 ),

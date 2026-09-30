@@ -10,7 +10,11 @@ import javax.swing.JPopupMenu
 
 internal class LevelPanel<T : LogEvent>(
     rawData: List<T>,
-) : FilterListPanel<T>("Levels"),
+    stripe: StripeState,
+) : FilterListPanel<T>(
+    "Levels",
+    extraButtons = listOf(stripeToggleButton(stripe, StripeMode.Levels, "Color stripe by log level")),
+),
     FileFilterResponsive<T> {
     override val icon = FlatSVGIcon("icons/bx-bar-chart-alt.svg")
 
