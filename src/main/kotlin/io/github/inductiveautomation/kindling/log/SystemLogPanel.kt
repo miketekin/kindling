@@ -21,7 +21,7 @@ import javax.swing.SwingUtilities
 class SystemLogPanel(
     paths: List<Path>,
     fileData: List<LogFile<SystemLogEvent>>,
-) : LogPanel<SystemLogEvent>(fileData.flatMap { it.items }, SystemLogColumns) {
+) : LogPanel<SystemLogEvent>(fileData.flatMap { it.items }, SystemLogColumns, wallClockTimestamps = false) {
 
     override val sidebar = FileFilterSidebar(
         listOf(
